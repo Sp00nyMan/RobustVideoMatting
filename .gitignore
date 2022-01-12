@@ -1,0 +1,5 @@
+/.idea
+/venv
+/__pycache__
+/model/__pycache__
+/rvm_mobilenetv3_tf
