@@ -10,7 +10,8 @@ import argparse
 import torch
 import tensorflow as tf
 
-from model import MattingNetwork, load_torch_weights
+from model.model import MattingNetwork
+from model.load_weights import load_torch_weights
 
 
 # Add input output names and shapes
@@ -58,4 +59,13 @@ class Exporter:
 
 
 if __name__ == '__main__':
-    Exporter()
+    import tensorflow as tf
+
+    # Convert the model
+    converter = tf.lite.TFLiteConverter.from_saved_model('rvm_mobilenetv3_tf')  # path to the SavedModel directory
+    converter.experimental_enable_resource_variables = True
+    tflite_model = converter.convert()
+    print('converted')
+    # Save the model.
+    with open('app/models/model.tflite', 'wb') as f:
+        f.write(tflite_model)
