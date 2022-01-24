@@ -128,7 +128,7 @@ dsp = Displayer('Matting',
 
 # Load model
 
-model = tf.keras.models.load_model('rvm_resnet50_tf')
+model = tf.keras.models.load_model('rvm_mobilenetv3_tf')
 model = tf.function(model)
 rec = [ tf.constant(0.) ] * 4
 downsample_ratio = tf.constant(0.25)

@@ -6,7 +6,9 @@ from kivy.clock import Clock
 from kivy.core.window import Window
 from kivy.utils import platform
 from kivy.config import Config
-# Config.set('modules', 'monitor', '')
+
+Config.set('modules', 'monitor', '')
+
 from layout import AppLayout
 if platform == 'android':
     from jnius import autoclass
@@ -47,7 +49,7 @@ class MyApp(App):
 
         if not permission:
             raise RuntimeError('Camera permission denied!')
-        self.layout.camera_reader.connect_camera(enable_analyze_pixels=True, analyze_pixels_resolution=320)
+        self.layout.camera_reader.connect_camera(enable_analyze_pixels=False, analyze_pixels_resolution=320)
 
     def on_start(self):
         Clock.schedule_once(self.connect_camera)

@@ -1,27 +1,23 @@
+import os.path
+
 import cv2
 import numpy as np
-from kivy.utils import platform
+import tensorflow as tf
 
-try:
-  # Import TFLite interpreter from tflite_runtime package if it's available.
-  from tflite_runtime.interpreter import Interpreter
-  from tflite_runtime.interpreter import load_delegate
-except ImportError:
-  # If not, fallback to use the TFLite interpreter from the full TF package.
-  import tensorflow as tf
+Interpreter = tf.lite.Interpreter
 
-  Interpreter = tf.lite.Interpreter
-  load_delegate = tf.lite.experimental.load_delegate
 
 class Model:
-    MODELS_DIR = 'models/'
-    def __init__(self, mode='online'):
+    MODELS_DIR = 'models'
+
+    def __init__(self, mode='online', num_threads=None):
         assert mode in ['online', 'local']
 
-        self.model : Interpreter = None
-        self.rec = [0.] * 4
-        self.downsample_ratio = 1.
+        self.model: Interpreter = None
+        self.rec = np.array([0.] * 4).astype('float32')
+        self.downsample_ratio = np.float32(1.)
 
+        self.num_threads = num_threads
         self.online = mode == 'online'
         if self.online:
             self.__initialize_online()
@@ -29,44 +25,65 @@ class Model:
             self.__initialize_local()
 
     def __initialize_local(self):
-        model_name = 'model.tflite' if platform == 'android' else 'model_tf'
-        self.model = Interpreter(model_path=self.MODELS_DIR + model_name)
-        self.model.allocate_tensors()
+        self.model = Interpreter(model_path=os.path.join(os.getcwd(), self.MODELS_DIR, 'model.tflite'),
+                                 num_threads=self.num_threads)
+        self.model.resize_tensor_input(2, (1, 720, 1280, 3))
+        self._allocate_tensors()
 
+    def _allocate_tensors(self):
+        self.model.allocate_tensors()
 
     def __initialize_online(self):
         pass
+    # TODO: Online inference
 
-    #TODO: Online inference
+    def _set_input_tensor(self, image):
+        [print(x.shape) for x in self.rec]
+        print('-----')
+        input_details = self.model.get_input_details()
+
+        # need_reallocate = False
+        # for i, r in enumerate([3, 0, 4, 1]):
+        #     if self.model.tensor(r)().shape != self.rec[i].shape:
+        #         self.model.resize_tensor_input(r, self.rec[i].shape)
+        #         need_reallocate = True
+        # if need_reallocate:
+        #     self._allocate_tensors()
+
+        for i, r in enumerate([3, 0, 4, 1]):
+            self.model.set_tensor(r, self.rec[i])
+
+        self.model.set_tensor(2, image)
+        self.model.set_tensor(5, self.downsample_ratio)
+
+
+    def _preprocess(self, input_image: np.ndarray):
+        if input_image.shape[-1] == 4:
+            input_image = cv2.cvtColor(input_image, cv2.COLOR_RGBA2RGB)
+        input_image = np.expand_dims(input_image, 0)
+        input_image = input_image.astype('float32')
+        input_image = np.divide(input_image, 255)
+        return input_image
+
     def process(self, input_image):
         image = self._preprocess(input_image)
         self._set_input_tensor(image)
 
         self.model.invoke()
+        fgr, pha = self._get_output()
+        return self._postprocess(fgr, pha)
 
-        out = self.model.get_output_tensor()
+    def _get_output(self):
+        output = []
+        output_details = self.model.get_output_details()
+        for t in output_details:
+            output.append(self.model.get_tensor(t['index']))
+        fgr, pha = output[:2]
+        self.rec = output[2:]
+        return fgr, pha
 
-        return self._postprocess(out)
-
-    def _preprocess(self, input_image : np.ndarray):
-        if input_image.shape == 4:
-            input_image = cv2.cvtColor(input_image, cv2.COLOR_RGBA2RGB)
-        input_image = np.expand_dims(input_image, 0)
-        input_image = np.cast(input_image, 'float32')
-        input_image = np.divide(input_image, 255)
-        return input_image
-
-    def _set_input_tensor(self, image):
-        tensor_index = self.model.get_input_details()[0]['index']
-        input_tensor = self.model.tensor(tensor_index)[0]
-
-        input_tensor[0] = image
-        input_tensor[1:5] = self.rec
-        input_tensor[5] = self.downsample_ratio
-
-    def _postprocess(self, out):
-        fgr, pha, *self.rec = out['fgr'], out['pha'], out['r1o'], out['r2o'], out['r3o'], out['r4o']
+    def _postprocess(self, fgr, pha):
         result = np.multiply(fgr, pha)
         result = np.squeeze(result, 0)
-        result = np.cast(result, 'float32')
+        result = np.multiply(result, 255)
         return result
